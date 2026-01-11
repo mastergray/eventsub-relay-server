@@ -1,0 +1,21 @@
+{
+  "name": "eventsub-relay-server",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "npx nodemon --watch index.js --watch src --watch ./res/config.jsonc --ext js,jsonc --exec \"node index.js ./res/config.jsonc\""
+  },
+  "type": "module",
+  "keywords": [],
+  "author": "mastergray",
+  "license": "MIT",
+  "description": "",
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "express": "^5.2.1",
+    "jsonc-parser": "^3.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}
