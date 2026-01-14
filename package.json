@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "npx nodemon --watch index.js --watch src --watch ./res/config.jsonc --ext js,jsonc --exec \"node index.js ./res/config.jsonc\""
+    "test": "npx nodemon --watch index.js --watch src --watch ./res/config.jsonc --ext js,jsonc --exec \"node index.js ./res/config.jsonc\"",
+    "test-event-queue":"node --test ./src/EventQueue/tests/index.js"
   },
   "type": "module",
   "keywords": [],
@@ -13,7 +14,8 @@
   "dependencies": {
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
-    "jsonc-parser": "^3.3.1"
+    "jsonc-parser": "^3.3.1",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"
