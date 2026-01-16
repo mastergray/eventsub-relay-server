@@ -23,12 +23,8 @@ export default class EventQueue {
     queueDelay;     // How often messages are read from queue
     queueMax;       // Maximum number of messages in queue
     queueTimer;     // Stores timeout used when reading messages from queue
-    lastActive;     // Timestamp for when last message was added to queue
     idleSince;      // Timestampe for how long queue has been idle for 
     mode;           // Current state of queue
-    onMessage;      // Function that operates on a recieved message
-    onError;        // Function that operation on a queue error
-    onIdle;         // Function that operates on queue when no messages are available
 
     /**
      *
@@ -37,17 +33,12 @@ export default class EventQueue {
      * 
      */
 
-    // CONSTRUCTOR :: {queueDelay:NUMER|VOID, queueMax:NUMBER|VOID, onMessage:(msg, eventQueue) -> PROMISE(VOID)|VOID, onError:(err, eventQueue) -> PROMISE(VOID)|VOID, onIdle:(eventQueue) -> PROMISE(VOID)|VOID} -> this
-    constructor({queueDelay, queueMax, onMessage, onError, onIdle}) {
+    // CONSTRUCTOR :: NUMBER|VOID, NUMBER|VOID -> this
+    constructor(queueDelay, queueMax) {
         
         // Set polices (or there defaults): 
         this.queueDelay = queueDelay ?? 250;
         this.queueMax = queueMax ?? 1000;
-
-        // Set handlers (or there defaults):
-        this.onMessage = typeof(onMessage) === "function" ? onMessage : async (msg, eventQueue) => console.log(msg)
-        this.onError = typeof(onError) === "function" ? onError : async (err, eventQueue) => console.error(err);
-        this.onIdle = typeof(onIdle) === "function" ? onIdle : async (eventQueue) => console.log(eventQueue.idleSince);
 
         // Set default "mode":
         this.mode = EventQueue.MODES.STOPPED;
@@ -87,7 +78,6 @@ export default class EventQueue {
          if (this.mode !== EventQueue.MODES.STOPPED) {
             this.mode = EventQueue.MODES.STOPPED;
             this.idleSince = null;
-            this.lastActive = null;
             clearTimeout(this.queueTimer);
             this.queueTimer = null
         }
@@ -99,13 +89,10 @@ export default class EventQueue {
 
         // Ensure queue can recieve messages:
         if (this.mode === EventQueue.MODES.ACTIVE) {
-
-            // Update last active when message is recieved:
-            this.lastActive = Date.now();
         
             // Check if queue can still recieve messages:
             if ((this.queue.length - this.queueHead) >= this.queueMax) {
-                await this.onError(new Error("Queue overflow"), this);
+                await this.onError(new Error("Queue overflow"));
                 return;
             }
 
@@ -145,7 +132,7 @@ export default class EventQueue {
                 } catch (err) {
 
                     // Handle errors:
-                    await this.onError(err, this)
+                    await this.onError(err)
                 } 
 
                 // Initiate next tick if queue is still active:
@@ -175,7 +162,7 @@ export default class EventQueue {
             // NOTE: This is to "drain" all messages so we can read more than once message per "tick" of the queue timer:
             while (this.mode === EventQueue.MODES.ACTIVE && this.queueHead < this.queue.length) {
                 const msg = this.queue[this.queueHead++];
-                await this.onMessage(msg, this);
+                await this.onMessage(msg);
             }
 
             // Reset head to read next batch of messages on next "tick" of queue timer:
@@ -185,10 +172,36 @@ export default class EventQueue {
         } else {
         
             // Handle idle queue:
-            if (this.idleSince == null) this.idleSince = Date.now();
-            await this.onIdle(this);
+            const now = Date.now();
+            if (this.idleSince == null) this.idleSince = now;
+            await this.onIdle(now - this.idleSince);
+
         }
 
+    }
+
+    /**
+     * 
+     *  "Abstact" Methods - Methods intended to be overwritten by a subclass 
+     * 
+     */
+
+    // :: JSON -> PROMISE(VOID)
+    // Handler that operates on current message from queue:
+    async onMessage(msg) {
+        console.log(msg);
+    }
+
+    // :: ERROR -> PROMISE(VOID)
+    // Handler that operates on error from queue:
+    async onError(err) {
+        console.error(err);
+    }
+
+    // :: NUMBER -> PROMISE(VOID)
+    // Handler that operates on queue when queue has no messages:
+    async onIdle(idleFor) {
+        console.log(idleFor);
     }
 
     /**
@@ -197,9 +210,9 @@ export default class EventQueue {
      * 
      */
 
-    // Static Factory Method :: {queueDelay:NUMER|VOID, queueMax:NUMBER|VOID, onMessage:(msg, eventQueue) -> PROMISE(VOID)|VOID, onError:(err, eventQueue) -> PROMISE(VOID)|VOID, onIdle:(eventQueue) -> PROMISE(VOID)|VOID} -> eventQueue
-    static init(config) {
-        return new EventQueue(config ?? {});
+    // Static Factory Method :: {queueDelay:NUMER|VOID, queueMax:NUMBER|VOID} -> eventQueue
+    static init({queueDelay, queueMax}) {
+        return new EventQueue(queueDelay, queueMax);
     }
 
 }
