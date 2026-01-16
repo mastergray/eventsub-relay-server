@@ -67,9 +67,6 @@ export default class EventManager extends EventQueue {
     // Starts queue and connects to web socket server:
     async launch() {
 
-        // Start message:
-        console.log("Launching...");
-
         // Start queue:
         super.start();
 
@@ -112,7 +109,6 @@ export default class EventManager extends EventQueue {
     // OVERRIDE :: JSON -> PROMISE(VOID) 
     async onMessage(msg) {
         try {
-
             // Destructure message:
             const {type, payload} = msg;
 
@@ -136,17 +132,17 @@ export default class EventManager extends EventQueue {
                 break;
 
                 case "SESSION_KEEPALIVE":
-                    console.log("Keepalive received", payload);
+                    // Keepalive received - no action needed, just resets idle timer
                 break;
     
                 // TODO: Handle Chat Commands:
                 case "NOTIFICATION":
-                    console.log(payload);
-                break;
+                    console.log(`[EventManager] NOTIFICATION received:`, JSON.stringify(payload, null, 2));
+                    break;
 
                 case "REVOCATION":
-                    console.log(payload);
-                break;
+                    console.log(`[EventManager] REVOCATION received:`, JSON.stringify(payload, null, 2));
+                    break;
 
             }
  
@@ -248,7 +244,7 @@ export default class EventManager extends EventQueue {
 
         // What to do when WebSocket is first opened:
         ws.on("open", () => {
-            console.log(`${new Date()} OPEN CONNECTION`)
+            console.log(`[EventManager] WebSocket connected`);
         });
 
         // What to do when a message is recieved from the webSocket:
@@ -269,6 +265,7 @@ export default class EventManager extends EventQueue {
                 switch(type) {
 
                     case "session_welcome":
+                        console.log(`[EventManager] Session welcome received, session ID: ${msg.payload.session.id}`);
                         this.send("SESSION_WELCOME", {
                             "oldConnection":config.oldConnection,
                             "sessionID": msg.payload.session.id,
@@ -322,6 +319,7 @@ export default class EventManager extends EventQueue {
 
         // What to do when wbesocket has an error:
         ws.on("error", (err) => {
+            console.error(`[EventManager] WebSocket error:`, err);
 
             // Abort operation if we suspect this websocket is "stale" due to a renewed connection:
             if (this.wsConnection !== ws) return;
@@ -403,6 +401,7 @@ export default class EventManager extends EventQueue {
     // :: {sessionID:STRING, oldConnection:WEBSOCKET|VOID, createSubs:BOOL|VOID} -> PROMISE(VOID)
     // Updates state, starts queue, and creates subscription for every stored subscription type:
     async startSession({sessionID, oldConnection, createSubs}) {
+        console.log(`[EventManager] Session established: ${sessionID}`);
 
         // Update state:
         this.connectionState = EventManager.WS_STATES.ACTIVE;
@@ -412,14 +411,23 @@ export default class EventManager extends EventQueue {
         
         // Create subscriptions using session ID:
         if (createSubs) {
-            return this.createSubscriptions(sessionID);
+            try {
+                await this.createSubscriptions(sessionID);
+                console.log(`[EventManager] All subscriptions created successfully`);
+            } catch (err) {
+                console.error(`[EventManager] Failed to create subscriptions:`, err);
+                throw err;
+            }
         }
-    
     }
 
     // :: STRING -> PROMISE([VOID])
     // Create subscriptions for all stored subscription types using the given session ID:
     async createSubscriptions(sessionID) {
+        if (!this.subscriptionTypes || this.subscriptionTypes.length === 0) {
+            console.warn(`[EventManager] No subscription types configured - no subscriptions will be created`);
+            return [];
+        }
               
         // Make requests for each subscription type we need to create:
         const subscriptions = this.subscriptionTypes.map((subscription) => {
@@ -455,8 +463,6 @@ export default class EventManager extends EventQueue {
                     expires_in: newTokens.expires_in,
                     scope: newTokens.scope,
                 });
-
-                console.log('Token refreshed successfully');
             } catch (err) {
                 // Propagate error - can't create subscriptions without valid token
                 throw new Error(`Failed to refresh access token: ${err.message}`);
@@ -467,7 +473,6 @@ export default class EventManager extends EventQueue {
     // :: STRING, {version:NUMBER, type:STRING} -> PROMISE(VOID)
     // Makes request to create subscription for recieving notfications with:
     async createSubscription(sessionID, subscription) {
-        
         // Ensure token is valid before attempting to create subscription
         await this.ensureValidToken();
 
@@ -493,12 +498,14 @@ export default class EventManager extends EventQueue {
         });
 
         if (!res.ok) {
-            console.log("Creating subscription for", subscription.type);
             const text = await res.text();
+            console.error(`[EventManager] Subscription creation failed for ${subscription.type}:`, text);
             throw new Error(`EventSub subscription failed (${res.status}): ${text}`);
         }
 
-        return res.json();
+        const result = await res.json();
+        console.log(`[EventManager] Subscription created: ${subscription.type} (ID: ${result.data?.[0]?.id || 'unknown'})`);
+        return result;
         
     }
 

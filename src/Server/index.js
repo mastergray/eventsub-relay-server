@@ -2,9 +2,11 @@
 import express from "express";              // Implements server
 import cookieParser from "cookie-parser";   // Handles cookies
 import os from "os";                        // For reading IP address from network interface
+import EventManager from "../EventManager/index.js";  // For managing EventSub WebSocket connections
+import EventQueue from "../EventQueue/index.js";  // For accessing EventQueue.MODES
 
-// Initializes Express Server from config :: {PORT}, oAuthManger, tokenStore -> VOID
-export default (config, oauthManager, tokenStore) => {
+// Initializes Express Server from config :: {PORT}, oAuthManger, tokenStore, eventManager -> VOID
+export default (config, oauthManager, tokenStore, eventManager) => {
 
     // Destructure config and initalize instance:
     const {PORT} = config ?? {PORT:3000};
@@ -103,6 +105,52 @@ export default (config, oauthManager, tokenStore) => {
         }
 
     })
+
+    // GET :: Start EventManager monitoring:
+    app.get("/monitor", async (req, res, next) => {
+        try {
+            const currentState = eventManager.connectionState;
+            
+            if (currentState === EventManager.WS_STATES.ACTIVE) {
+                return res.json({
+                    status: "already_monitoring",
+                    connectionState: "ACTIVE"
+                });
+            }
+            
+            if (currentState === EventManager.WS_STATES.CONNECTING) {
+                return res.json({
+                    status: "already_connecting",
+                    connectionState: "CONNECTING",
+                    message: "Connection is already in progress, please wait"
+                });
+            }
+            
+            await eventManager.launch();
+            res.json({
+                status: "monitoring_started",
+                connectionState: "CONNECTING"
+            });
+        } catch (err) {
+            console.error("Failed to start monitoring:", err);
+            res.status(500).json({
+                status: "error",
+                error: err.message
+            });
+        }
+    });
+
+    // GET :: Get EventManager status:
+    app.get("/monitor/status", (req, res, next) => {
+        const states = EventManager.WS_STATES;
+        const stateNames = Object.keys(states).find(key => states[key] === eventManager.connectionState);
+        
+        res.json({
+            connectionState: stateNames || "UNKNOWN",
+            hasConnection: !!eventManager.wsConnection,
+            queueMode: eventManager.mode === EventQueue.MODES.ACTIVE ? "ACTIVE" : "STOPPED"
+        });
+    });
 
     /**
      * 
