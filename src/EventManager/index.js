@@ -38,6 +38,7 @@ export default class EventManager extends EventQueue {
     userID;             // Twitch User ID               
     broadcasterID;      // Twithc User ID of a broadcaster (i.e. the streamer we detecting events for)
     subscriptionTypes;  // Array of subscription objects {version:NUMBER, type:STRING} we are creating after a websocket connection has successfully been created
+    notificationManager; // NotificationManager instance for routing notifications to handlers
 
 
     /**
@@ -46,7 +47,7 @@ export default class EventManager extends EventQueue {
      * 
      */
 
-    // CONSTRUCTOR :: {keepAlive:NUMBER, keepAliveOffSet:NUMBER, maxRetry:NUMBER, retryDelay:NUMBER, queueDelay:NUMBER, queueMax:NUMBER, clientID:STRING, tokenStore:TokenStore, oauthManager:OAuthManager, userID:STRING, broadcasterID:STRING, subscriptionTypes:[{version:NUMBER, type:STRING}]} -> this
+    // CONSTRUCTOR :: {keepAlive:NUMBER, keepAliveOffSet:NUMBER, maxRetry:NUMBER, retryDelay:NUMBER, queueDelay:NUMBER, queueMax:NUMBER, clientID:STRING, tokenStore:TokenStore, oauthManager:OAuthManager, userID:STRING, broadcasterID:STRING, subscriptionTypes:[{version:NUMBER, type:STRING}], notificationManager:NotificationManager|VOID} -> this
     constructor(config = {}) {
         super(config.queueDelay, config.queueMax);
         this.keepAlive = config.keepAlive ?? 30
@@ -60,6 +61,7 @@ export default class EventManager extends EventQueue {
         this.userID = config.userID;
         this.broadcasterID = config.broadcasterID
         this.subscriptionTypes = config.subscriptionTypes;
+        this.notificationManager = config.notificationManager;
         this.start();   // Start Queue
     }
 
@@ -135,9 +137,12 @@ export default class EventManager extends EventQueue {
                     // Keepalive received - no action needed, just resets idle timer
                 break;
     
-                // TODO: Handle Chat Commands:
                 case "NOTIFICATION":
-                    console.log(`[EventManager] NOTIFICATION received:`, JSON.stringify(payload, null, 2));
+                    if (this.notificationManager) {
+                        await this.notificationManager.handle(payload);
+                    } else {
+                        console.log(`[EventManager] NOTIFICATION received:`, JSON.stringify(payload, null, 2));
+                    }
                     break;
 
                 case "REVOCATION":
