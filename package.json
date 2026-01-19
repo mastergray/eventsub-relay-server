@@ -4,7 +4,8 @@
   "main": "index.js",
   "scripts": {
     "test": "npx nodemon --watch index.js --watch src --watch ./res/config.jsonc --ext js,jsonc --exec \"node index.js ./res/config.jsonc\"",
-    "test-event-queue":"node --test ./src/EventQueue/tests/index.js"
+    "test-event-queue":"node --test ./src/EventQueue/tests/index.js",
+    "start":"node index.js ./res/config.jsonc"
   },
   "type": "module",
   "keywords": [],

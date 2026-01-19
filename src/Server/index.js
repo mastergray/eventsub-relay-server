@@ -126,10 +126,19 @@ export default (config, oauthManager, tokenStore, eventManager) => {
                 });
             }
             
+            // Call launch (which now sets state to CONNECTING internally):
+            console.log(`[Server] Launching EventManager connection...`);
             await eventManager.launch();
+            
+            // Small delay to ensure state is updated (helps with race conditions):
+            await new Promise(resolve => setTimeout(resolve, 10));
+            
+            const state = eventManager.connectionState === EventManager.WS_STATES.CONNECTING ? "CONNECTING" : "UNKNOWN";
+            console.log(`[Server] EventManager launch initiated, current state: ${state}`);
+            
             res.json({
                 status: "monitoring_started",
-                connectionState: "CONNECTING"
+                connectionState: state
             });
         } catch (err) {
             console.error("Failed to start monitoring:", err);

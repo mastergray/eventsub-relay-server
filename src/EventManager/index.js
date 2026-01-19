@@ -31,6 +31,7 @@ export default class EventManager extends EventQueue {
     keepAliveOffset;    // keepalive + offset determines when to rety a connection
     retryDelay;         // How long to wait before trying to reconnect
     maxRetry = 0;       // Number of times to try and reconnect before throwing exception
+    isShuttingDown = false; // Flag to prevent auto-reconnect during intentional shutdown
     
     clientID;           // Twitch API OAuth Client ID
     tokenStore;        // TokenStore instance for managing access tokens
@@ -62,19 +63,34 @@ export default class EventManager extends EventQueue {
         this.broadcasterID = config.broadcasterID
         this.subscriptionTypes = config.subscriptionTypes;
         this.notificationManager = config.notificationManager;
+        this.isShuttingDown = false;
         this.start();   // Start Queue
     }
 
     // :: VOID -> PROMISE(VOID)
     // Starts queue and connects to web socket server:
     async launch() {
+        // Guard against duplicate launches:
+        if (this.connectionState === EventManager.WS_STATES.CONNECTING) {
+            console.log(`[EventManager] Already connecting, ignoring duplicate launch`);
+            return; // Already connecting, ignore duplicate launch
+        }
+        
+        if (this.connectionState === EventManager.WS_STATES.ACTIVE) {
+            console.log(`[EventManager] Already active, ignoring launch`);
+            return; // Already active, ignore launch
+        }
+
+        console.log(`[EventManager] Starting connection to Twitch EventSub...`);
+
+        // Set state to CONNECTING immediately (before queuing message):
+        this.connectionState = EventManager.WS_STATES.CONNECTING;
 
         // Start queue:
         super.start();
 
         // Connect to web socket server:
         await this.send("CONNECT");
-
     }
 
 
@@ -110,6 +126,7 @@ export default class EventManager extends EventQueue {
 
     // OVERRIDE :: JSON -> PROMISE(VOID) 
     async onMessage(msg) {
+
         try {
             // Destructure message:
             const {type, payload} = msg;
@@ -217,14 +234,16 @@ export default class EventManager extends EventQueue {
 
         // Guard against concurrent connection attempts
         // BUT allow Twitch-initiated renewals (indicated by oldConnection in config)
+        // AND allow connection if no wsConnection exists yet (first connection attempt from launch())
         if (this.connectionState === EventManager.WS_STATES.CONNECTING) {
             if (config.oldConnection) {
                 // This is a renewal - allow it but don't terminate the old connection yet
                 // The old connection will be terminated in startSession() after new session is established
-            } else {
-                // Duplicate fresh connection attempt - ignore
+            } else if (this.wsConnection) {
+                // Duplicate fresh connection attempt while connection already exists - ignore
                 return;
             }
+            // If state is CONNECTING but no wsConnection exists, proceed (this is from launch())
         }
 
         // Terminate any existing connection before creating new one
@@ -249,7 +268,8 @@ export default class EventManager extends EventQueue {
 
         // What to do when WebSocket is first opened:
         ws.on("open", () => {
-            console.log(`[EventManager] WebSocket connected`);
+            console.log(`[EventManager] WebSocket connected to ${config.url ?? this.url}`);
+            console.log(`[EventManager] Waiting for session welcome...`);
         });
 
         // What to do when a message is recieved from the webSocket:
@@ -271,6 +291,7 @@ export default class EventManager extends EventQueue {
 
                     case "session_welcome":
                         console.log(`[EventManager] Session welcome received, session ID: ${msg.payload.session.id}`);
+                        console.log(`[EventManager] Establishing session and creating subscriptions...`);
                         this.send("SESSION_WELCOME", {
                             "oldConnection":config.oldConnection,
                             "sessionID": msg.payload.session.id,
@@ -309,16 +330,26 @@ export default class EventManager extends EventQueue {
         });
 
         // What to do when websocket is closed:
-        ws.on("close", () => {
-
+        ws.on("close", (code, reason) => {
             // Abort operation if we suspect this websocket is "stale" due to a renewed connection:
             if (this.wsConnection !== ws) return;
 
-            // Always attempt to reconnect on close regardless of state (this is in case a connection is lost while ACTIVE):
-            // NOTE: THis is fine for now because to actually shutdown the connection intentioally - we'd shutdown the service calling EventManager anyway:
+            const reasonText = reason ? reason.toString() : "unknown";
+            if (this.isShuttingDown) {
+                console.log(`[EventManager] WebSocket closed (shutting down): code ${code}, reason: ${reasonText}`);
+            } else {
+                console.log(`[EventManager] WebSocket closed unexpectedly: code ${code}, reason: ${reasonText}`);
+                console.log(`[EventManager] Will attempt to reconnect...`);
+            }
+
+            // Update state and clean up:
             this.connectionState = EventManager.WS_STATES.STOPPED;
             this.wsConnection = null;
-            this.send("RECONNECT", config);
+
+            // Only attempt to reconnect if we're not intentionally shutting down:
+            if (!this.isShuttingDown) {
+                this.send("RECONNECT", config);
+            }
 
         });
 
@@ -346,10 +377,31 @@ export default class EventManager extends EventQueue {
 
     }
 
+    // :: VOID -> PROMISE(VOID)
+    // Gracefully shuts down the EventManager, terminating connections and stopping the queue:
+    async shutdown() {
+        this.isShuttingDown = true;
+        
+        // Stop the queue to prevent processing new messages:
+        this.stop();
+        
+        // Terminate WebSocket connection if it exists:
+        if (this.wsConnection) {
+            this.wsConnection.terminate();
+            this.wsConnection = null;
+        }
+        
+        // Reset state:
+        this.connectionState = EventManager.WS_STATES.STOPPED;
+    }
+
     // :: {url:STRING|VOID, attempts:NUMBER|VOID} -> PROMISE(VOID)
     // Recursively attempt to re-connect to WebSocket server:
     // NOTE: The promise is rejected if number of connection retries are exceeded:
     reconnect(config = {}) {
+        // Abort if we're shutting down:
+        if (this.isShuttingDown) return;
+        
         // Abort operation if we are already "connecting" (might be a Twitch renewal):
         if (this.connectionState === EventManager.WS_STATES.CONNECTING) return;
         

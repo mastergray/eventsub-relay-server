@@ -1,5 +1,5 @@
 // Handles routing of Twitch EventSub notifications to registered handlers:
-export default class NotificationManager {
+export default class  {
 
     /**
      * 
@@ -97,7 +97,7 @@ export default class NotificationManager {
                         try {
                             await commandHandler(params, username);
                         } catch (err) {
-                            console.error(`[NotificationManager] Command handler error for "${commandName}":`, err);
+                            console.error(`[] Command handler error for "${commandName}":`, err);
                         }
                         
                         // STOP HERE - do NOT check generic handlers (prevents double-handling):
@@ -117,7 +117,7 @@ export default class NotificationManager {
                 try {
                     await Promise.all(handlers.map(handler => handler(notification)));
                 } catch (err) {
-                    console.error(`[NotificationManager] Handler error for "${subscriptionType}":`, err);
+                    console.error(`[] Handler error for "${subscriptionType}":`, err);
                 }
             } else {
                 // No handlers found - call default handler if registered:
@@ -125,14 +125,14 @@ export default class NotificationManager {
                     try {
                         await this.onNoHandler(notification);
                     } catch (err) {
-                        console.error(`[NotificationManager] Default handler error:`, err);
+                        console.error(`[] Default handler error:`, err);
                     }
                 }
             }
             
         } catch (err) {
             // Log error but don't throw (to prevent breaking EventManager):
-            console.error(`[NotificationManager] Error processing notification:`, err);
+            console.error(`[] Error processing notification:`, err);
         }
     }
 
